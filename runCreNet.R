@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 ##
-## Runner Script for the new creNet2
+## Runner Script for the new creNet
 ###############################################################################
 
 suppressPackageStartupMessages(library("optparse"))
@@ -8,10 +8,9 @@ suppressPackageStartupMessages(library("optparse"))
 ## Parsing the commandline input
 option_list = list(
   make_option(c("-m", "--method"), default = "cv",
-              help="method to be applied: Either nested CV on training data (cv) or
-              model selection and test on test data (test): Default Value: cv"),
-  make_option(c("-n", "--model"),default = 'group.lasso',
-              help="one of group.lasso or lasso"),
+              help="method to be applied: one of cv, test or novel. Default Value: cv"),
+  make_option(c("-n", "--model"),default = 'creNet',
+              help="one of creNet or lasso. Default Value: creNet"),
   make_option(c("-e", "--entries"),
               help="path to the KB entries File"),
   make_option(c("-r", "--relations"),
@@ -19,7 +18,7 @@ option_list = list(
   make_option(c("-d", "--traindata"),
               help="path to training data"),
   make_option(c("-t", "--testdata"), default = NULL,
-              help="path to testing data"),
+              help="path to testing data (required for method test and novel)"),
   make_option(c("-a", "--nalphas"), default = 1,
               help="number of alphas to try: Default Value: 1 corresponding to alpha = 0 for pure group lasso"),
   make_option(c("-l", "--nlambdas"), default = 100,
@@ -29,7 +28,7 @@ option_list = list(
   make_option(c("-f", "--filter"), default = TRUE,
               help="apply cre filter. Default value: TRUE"),
   make_option(c("-i", "--iternum"), default = 10,
-              help="Number of iteration to reduce CV vriability and get confidence intervals. Default: 10"),
+              help="Number of iteration to reduce CV variability and get confidence intervals. Default: 10"),
   make_option(c("-c", "--crecutoff"), default = 0.01,
               help="Cutoff for cre prior pvalues: Default Value: 0.01"),
   make_option(c("-p", "--pvaluecutoff"), default = 0.05,
@@ -38,8 +37,10 @@ option_list = list(
               help="standardization method: 1) self, 2) all, 3) train. Default Value: all"),
   make_option(c("-v", "--verbose"), default = TRUE,
               help="verbose: Default Value: TRUE"),
-  make_option(c("-o", "--output"), default = NULL,
-              help="path to the output File"))
+  make_option(c("-o", "--outfile"), default = NULL,
+              help="path to the output prediction results file (optional)"),
+  make_option(c("-g", "--groupsfile"), default = NULL,
+              help="path to the output nonzero groups files (optional)"))
 
 ## Parsing the input argument
 opt <- parse_args(OptionParser(option_list=option_list))
@@ -59,19 +60,23 @@ cre.sig         <- opt$crecutoff
 de.sig          <- opt$pvaluecutoff
 verbose         <- as.logical(opt$verbose)
 standardize     <- opt$standardize
-output.file     <- opt$output
+output.file     <- opt$outfile
+groups.file     <- opt$groupsfile
 
 ## Required libraires
-require(creNet2)
+require(creNet)
 
 if(method == 'cv'){
   run.ms        <- FALSE
   run.nested.cv <- TRUE
   x.test <- NULL
   y.test <- NULL
-}else if(method == 'test'){
+}else if(method %in% c('test', 'novel')){
   run.ms        <- TRUE
   run.nested.cv <- FALSE
+}else{
+  cat('\n please provide a valid method -m \n')
+  quit()
 }
 
 if(verbose)
@@ -93,7 +98,12 @@ if(model == 'lasso'){
     fit <- cvGlmnet(x.train, y.train, x.test, y.test, num.iter = num.iter, nfold = 5, alpha = 1)
     pred.probs <- fit$test.probs
     
-    print(reportResults(pred.probs,y.test, 0.5, 'equal prior'))
+    if(method == 'test'){
+      print(reportResults(pred.probs,y.test, 0.5, 'equal prior'))
+    }else{
+      print(reportNovelResults(pred.probs, 0.5, 'equal prior'))
+    }
+   
     nonzero.genes  <- fit$nonzero.genes
     cat('\n significant hypothesis\n')
     ents.mRNA = ents[ents$type == 'mRNA', ]
@@ -118,6 +128,10 @@ if(model == 'lasso'){
   }
 }else{
   alphas <- seq(0, 1, length.out = nalphas)
+  out.tab <- data.frame(matrix(-1, nrow = 7, ncol = 7), stringsAsFactors = F)
+  colnames(out.tab) <- c('test', 'ep', 'ep', 'dist', 'dist', 'ba', 'ba')
+  out.tab[1,1] <- 'stats'
+  out.tab[1, 2:7] = rep(c('mean', 'sd'), 3)
   
   if(run.ms){
     if(verbose)
@@ -140,8 +154,9 @@ if(model == 'lasso'){
     groups <- CF$groups
     uid.groups <- CF$uid.groups
     sig.hyps <- CF$sig.hyps
-    weights = CF$weights
-    
+    weights <- CF$weights
+    child.uid <- CF$child.uid
+    child.sgn <- CF$child.sgn
     cre.priors.sig <- CF$cre.priors.sig
     
     ## Training data
@@ -156,46 +171,93 @@ if(model == 'lasso'){
     ## Testing data are self-standardized (use standardize="train" to use the mean & variances of training data)
     pred.test <- predict(fit.cv,newX=slice.test,standardize="self")
     pred.test = do.call(cbind, pred.test)
-    ## equal prior
-    reportResults(pred.test,y.test, 0.5, 'equal prior')
     
-    ## best ROC threshold dist adjustment
-    cf.dist <- unlist(lapply(fit.cv$fit, function(x) x$opt.thresh.dist))
-    reportResults(pred.test,y.test, cf.dist , 'best ROC threshold dist adjustment')
+    if(method == 'test'){
+      ## equal prior
+      DF <- reportResults(pred.test,y.test, 0.5, 'equal prior', verbose = verbose)
+      
+      out.tab[2:7, 2:3] <- DF[,1:2]
+      out.tab[2:7, 1] <- rownames(DF)
+      
+      ## best ROC threshold dist adjustment
+      cf.dist <- unlist(lapply(fit.cv$fit, function(x) x$opt.thresh.dist))
+      DF <- reportResults(pred.test,y.test, cf.dist , 'best ROC threshold dist adjustment')
+      
+      out.tab[2:7, 4:5] <- DF[,1:2]
+      
+      ## best ROC threshold F1 adjustment
+      #cf.f1 <- unlist(lapply(fit.cv$fit, function(x) x$opt.thresh.f1))
+      #reportResults(pred.test,y.test, cf.f1, 'best ROC threshold F1 adjustment')
+      
+      ## best ROC threshold ba adjustment
+      cf.ba <- unlist(lapply(fit.cv$fit, function(x) x$opt.thresh.ba))
+      DF <- reportResults(pred.test,y.test, cf.ba, 'best ROC threshold ba adjustment')
+      out.tab[2:7, 6:7] <- DF[,1:2]
+      
+      if(!is.null(output.file)){
+        write.table(out.tab, output.file, sep = '\t', quote = F, col.names = T, row.names = F)
+      }else{
+        verbose = TRUE
+      }
+      
+    }else{
+      ## equal prior
+      #labs <- reportNovelResults(pred.test, 0.5, 'equal prior', verbose = TRUE)
+      #cat(labs)
+      ## best ROC threshold ba adjustment
+      cf.ba <- unlist(lapply(fit.cv$fit, function(x) x$opt.thresh.ba))
+      labs <- reportNovelResults(pred.test, cf.ba, 'best ROC threshold ba adjustment', verbose = TRUE)
+      cat(labs)
+    }
     
-    ## best ROC threshold F1 adjustment
-    cf.f1 <- unlist(lapply(fit.cv$fit, function(x) x$opt.thresh.f1))
-    reportResults(pred.test,y.test, cf.f1, 'best ROC threshold F1 adjustment')
-    
-    ## best ROC threshold ba adjustment
-    cf.ba <- unlist(lapply(fit.cv$fit, function(x) x$opt.thresh.ba))
-    reportResults(pred.test,y.test, cf.ba, 'best ROC threshold ba adjustment')
-    
-    
-    best.lambda = fit.cv$best.lambda
-    best.alpha = fit.cv$best.alpha
+    best.lambda <- fit.cv$best.lambda
+    best.alpha <- fit.cv$best.alpha
     best.beta <- lapply(fit.cv$fit, function(x) x$beta)
+    
     nonzero.genes <- unique(unlist(lapply(best.beta, function(x) which(x != 0))))
+    nonzero.groups <- ents[which(ents$uid %in% unique(uid.groups[unique(nonzero.genes)])),]
+    coeffs <- lapply(best.beta, function(x) x[nonzero.genes])
+    coeffs.mean <- apply(do.call(cbind, coeffs), 1, mean)
+    coeffs.sd <- apply(do.call(cbind, coeffs), 1, sd)
+    ind.sig.coeffs <- which(abs(coeffs.mean) >= quantile(abs(coeffs.mean), prob = 0.75))
+    sig.coeffs = coeffs.mean[ind.sig.coeffs]
+    nonzero.genes <- nonzero.genes[ind.sig.coeffs]
+    nonzero.genes <- data.frame(uid = unlist(child.uid)[nonzero.genes], beta = sig.coeffs, stringsAsFactors = F)
+    nonzero.genes <- merge(ents,nonzero.genes, by.x = 1, by.y = 1) 
     
-    cat('best alpha\n')
-    print(best.alpha)
-    cat("\n")
-    
-    cat('best lambda\n')
-    print(best.lambda)
-    cat("\n")
-    
-    #nonzero.genes = which(best.beta[1:ncol(CF$slice.train)] != 0)
-    
-    cat('non-zero groups\n')
-    print(ents[which(ents$uid %in% unique(uid.groups[unique(nonzero.genes)])),])
+    if(verbose){
+      cat('best alpha\n')
+      print(best.alpha)
+      cat("\n")
+      
+      cat('best lambda\n')
+      print(best.lambda)
+      cat("\n")
+      
+      #nonzero.genes = which(best.beta[1:ncol(CF$slice.train)] != 0)
+      
+      if(method == 'test'){
+        print(out.tab)
+      }
+      cat('non-zero groups\n')
+      print(nonzero.groups)
+      
+      cat('non-zero genes\n')
+      print(nonzero.genes)
+    }
+    nonzero.groups = data.frame(nonzero.groups, beta = NA, stringsAsFactors = F)
+    group.tab = data.frame(rbind(nonzero.groups, nonzero.genes), stringsAsFactors = F)
+    if(nrow(group.tab) > 0 & !is.null(groups.file))
+      write.table(group.tab, groups.file, sep = '\t', quote = F, col.names = T, row.names = F)
   }else{
     if(verbose)
       cat(paste('\n Running Model', model, 'and method', method, '\n'))
     
     cat('\n running nested cre cv')
     Obj <- nested.cvSGL(ents, rels, x.train, y.train, type = "logit", alphas=alphas, nlam=nlam, num.iter = num.iter,
-                        type.weight = type.weight, standardize=standardize, measure = "auc", nfold=4, ncores=1)
+                        type.weight = type.weight, filter = filter,standardize=standardize, measure = "auc", 
+                        verbose = verbose,
+                        nfold=4, ncores=1)
     
     pred.train     <- Obj$pred
     cf.dist        <- Obj$opt.thresh.dist
@@ -206,19 +268,29 @@ if(model == 'lasso'){
     
     ## equal prior
     nested.accuracy(pred.train, y.train, outer.indecies, cf = 0.5)
-    nested.reportResults(pred.train,y.train, outer.indecies, 0.5, 'equal prior')
+    DR <- nested.reportResults(pred.train,y.train, outer.indecies, 0.5, 'equal prior', verbose = verbose)
+    
+    out.tab[2:7, 2:3] < DF[,1:2]
+    out.tab[2:7, 1] <- rownames(DF)
     
     ## dist prior
     nested.accuracy(pred.train, y.train, outer.indecies, cf = cf.dist)
     nested.reportResults(pred.train,y.train, outer.indecies, cf.dist, 'dist prior')
     
+    out.tab[2:7, 4:5] <- DF[,1:2]
+    
     ## f1 prior
-    nested.accuracy(pred.train, y.train, outer.indecies, cf = cf.f1)
-    nested.reportResults(pred.train,y.train, outer.indecies, cf.f1, 'f1 prior')
+    #nested.accuracy(pred.train, y.train, outer.indecies, cf = cf.f1)
+    #nested.reportResults(pred.train,y.train, outer.indecies, cf.f1, 'f1 prior')
     
     ## ba prior
     nested.accuracy(pred.train, y.train, outer.indecies, cf = cf.ba)
-    nested.reportResults(pred.train,y.train, outer.indecies, cf.ba, 'ba prior')
+    DF <- nested.reportResults(pred.train,y.train, outer.indecies, cf.ba, 'ba prior')
+    
+    out.tab[2:7, 6:7] <- DF[,1:2]
+    
+    if(!is.null(output.file))
+      write.table(out.tab, output.file, sep = '\t', quote = F, col.names = T, row.names = F)
     
     cat('\n significant hypothesis\n')
     print(sort(unique(Obj$sig.hyps)))
