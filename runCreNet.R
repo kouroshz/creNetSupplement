@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 ##
-## Runner Script for the new creNet
+## Runner Script for creNet
 ###############################################################################
 
 suppressPackageStartupMessages(library("optparse"))
@@ -39,7 +39,7 @@ option_list = list(
               help="verbose: Default Value: TRUE"),
   make_option(c("-o", "--outfile"), default = NULL,
               help="path to the output prediction results file (optional)"),
-  make_option(c("-g", "--groupsfile"), default = NULL,
+  make_option(c("-z", "--groupsfile"), default = NULL,
               help="path to the output nonzero groups files (optional)"))
 
 ## Parsing the input argument
@@ -90,6 +90,9 @@ y.train <- L$y.train
 x.test <- L$x.test
 y.test <- L$y.test
 
+##print(method)
+##print(model)
+##print(groups.file)
 
 if(model == 'lasso'){
   if(run.ms){
@@ -99,15 +102,38 @@ if(model == 'lasso'){
     pred.probs <- fit$test.probs
     
     if(method == 'test'){
-      print(reportResults(pred.probs,y.test, 0.5, 'equal prior'))
-    }else{
-      print(reportNovelResults(pred.probs, 0.5, 'equal prior'))
+      L <- reportResults(pred.probs,y.test, 0.5, 'equal prior', verbose = verbose)
+      L <- data.frame(test = rownames(L), L, stringsAsFactors = F)
+    }else if(method == 'novel'){
+      L <- reportNovelResults(pred.probs, 0.5, 'equal prior', verbose = verbose)
+      L <- data.frame(y = L, probs = pred.probs, stringsAsFactors = F)
     }
    
+     
+    if(!is.null(output.file)){
+      write.table(L, output.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
+    
     nonzero.genes  <- fit$nonzero.genes
-    cat('\n significant hypothesis\n')
+    nonzero.coeffs <- fit$nonzero.coeffs
+    
     ents.mRNA = ents[ents$type == 'mRNA', ]
-    print(ents.mRNA[which(ents.mRNA$id %in% nonzero.genes),])
+    
+    L <- data.frame(genes = ents.mRNA[match(nonzero.genes, ents.mRNA$id),], 
+                    coeffs = nonzero.coeffs, stringsAsFactors = F)
+    
+    LL <- aggregate(L$coeffs, by = list(L$genes.uid),mean)
+    L <- cbind(L[match(LL[,1], L$genes.uid), c(1,2,3,4)], LL[,2])
+    colnames(L)[5] <- 'coeffs'
+    
+    if(!is.null(groups.file)){
+      write.table(L, groups.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
+    
+    if(verbose){
+      cat('\n significant hypothesis\n')
+      print(L)
+    }
     
   }else{
     if(verbose)
@@ -117,14 +143,41 @@ if(model == 'lasso'){
     Obj <- nested.cvGlmnet(x.train, y.train, num.iter = num.iter, nfold = 4, verbose = verbose)
     pred.train <- Obj$pred
     outer.indecies <- Obj$outer.indecies
-    nonzero.genes  <- Obj$nonzero.genes
-    ## equal prior
-    print(nested.accuracy(pred.train, y.train, outer.indecies, cf = 0.5))
-    print(nested.reportResults(pred.train,y.train, outer.indecies, 0.5, 'equal prior'))
     
-    cat('\n significant hypothesis\n')
+    ## equal prior
+    L <- nested.reportResults(pred.train,y.train, outer.indecies, 0.5, 'equal prior', verbose = verbose)
+    L <- data.frame(test = rownames(L), L, stringsAsFactors = F)
+    
+    #if(verbose){
+    #  print(nested.accuracy(pred.train, y.train, outer.indecies, cf = 0.5))
+    #}
+    
+    if(!is.null(output.file)){
+      write.table(L, output.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
+
+    nonzero.genes  <- Obj$nonzero.genes
+    nonzero.coeffs <- Obj$nonzero.coeffs
+    
+    
     ents.mRNA = ents[ents$type == 'mRNA', ]
-    print(ents.mRNA[which(ents.mRNA$id %in% nonzero.genes),])
+    
+    L <- data.frame(genes = ents.mRNA[match(nonzero.genes, ents.mRNA$id),], 
+                    coeffs = nonzero.coeffs[match(nonzero.genes, names(nonzero.coeffs))], stringsAsFactors = F)
+    
+    LL <- aggregate(L$coeffs, by = list(L$genes.uid),mean)
+    L <- cbind(L[match(LL[,1], L$genes.uid), c(1,2,3,4)], LL[,2])
+    colnames(L)[5] <- 'coeffs'
+    
+    if(!is.null(groups.file)){
+      write.table(L, groups.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
+    
+    if(verbose){
+      cat('\n significant hypothesis\n')
+      print(L)
+    }
+    
   }
 }else{
   alphas <- seq(0, 1, length.out = nalphas)
@@ -181,7 +234,7 @@ if(model == 'lasso'){
       
       ## best ROC threshold dist adjustment
       cf.dist <- unlist(lapply(fit.cv$fit, function(x) x$opt.thresh.dist))
-      DF <- reportResults(pred.test,y.test, cf.dist , 'best ROC threshold dist adjustment')
+      DF <- reportResults(pred.test,y.test, cf.dist , 'best ROC threshold dist adjustment', verbose = verbose)
       
       out.tab[2:7, 4:5] <- DF[,1:2]
       
@@ -191,13 +244,11 @@ if(model == 'lasso'){
       
       ## best ROC threshold ba adjustment
       cf.ba <- unlist(lapply(fit.cv$fit, function(x) x$opt.thresh.ba))
-      DF <- reportResults(pred.test,y.test, cf.ba, 'best ROC threshold ba adjustment')
+      DF <- reportResults(pred.test,y.test, cf.ba, 'best ROC threshold ba adjustment', verbose = verbose)
       out.tab[2:7, 6:7] <- DF[,1:2]
       
       if(!is.null(output.file)){
         write.table(out.tab, output.file, sep = '\t', quote = F, col.names = T, row.names = F)
-      }else{
-        verbose = TRUE
       }
       
     }else{
@@ -206,8 +257,18 @@ if(model == 'lasso'){
       #cat(labs)
       ## best ROC threshold ba adjustment
       cf.ba <- unlist(lapply(fit.cv$fit, function(x) x$opt.thresh.ba))
-      labs <- reportNovelResults(pred.test, cf.ba, 'best ROC threshold ba adjustment', verbose = TRUE)
-      cat(labs)
+      labs <- reportNovelResults(pred.test, cf.ba, 'best ROC threshold ba adjustment', verbose = verbose)
+      if(verbose){
+        cat('\n predicted labels: \n')
+        cat(labs)
+        cat('\n')
+      }
+      
+      L <- data.frame(y = labs, probs = pred.test, stringsAsFactors = F)
+      if(!is.null(output.file)){
+        write.table(L, output.file, sep = '\t', quote = F, col.names = T, row.names = F)
+      }
+      
     }
     
     best.lambda <- fit.cv$best.lambda
@@ -247,7 +308,7 @@ if(model == 'lasso'){
     }
     nonzero.groups = data.frame(nonzero.groups, beta = NA, stringsAsFactors = F)
     group.tab = data.frame(rbind(nonzero.groups, nonzero.genes), stringsAsFactors = F)
-    if(nrow(group.tab) > 0 & !is.null(groups.file))
+    if(!is.null(groups.file))
       write.table(group.tab, groups.file, sep = '\t', quote = F, col.names = T, row.names = F)
   }else{
     if(verbose)
@@ -264,18 +325,18 @@ if(model == 'lasso'){
     cf.f1          <- Obj$opt.thresh.f1
     cf.ba          <- Obj$opt.thresh.ba
     outer.indecies <- Obj$outer.indecies
-    sort(unique(Obj$sig.hyps))
+    ##sort(unique(Obj$sig.hyps))
     
     ## equal prior
-    nested.accuracy(pred.train, y.train, outer.indecies, cf = 0.5)
-    DR <- nested.reportResults(pred.train,y.train, outer.indecies, 0.5, 'equal prior', verbose = verbose)
+    ##nested.accuracy(pred.train, y.train, outer.indecies, cf = 0.5)
+    DF <- nested.reportResults(pred.train,y.train, outer.indecies, 0.5, 'equal prior', verbose = verbose)
     
-    out.tab[2:7, 2:3] < DF[,1:2]
+    out.tab[2:7, 2:3] <- DF[,1:2]
     out.tab[2:7, 1] <- rownames(DF)
     
     ## dist prior
-    nested.accuracy(pred.train, y.train, outer.indecies, cf = cf.dist)
-    nested.reportResults(pred.train,y.train, outer.indecies, cf.dist, 'dist prior')
+    ##nested.accuracy(pred.train, y.train, outer.indecies, cf = cf.dist)
+    DF <- nested.reportResults(pred.train,y.train, outer.indecies, cf.dist, 'dist prior', verbose = verbose)
     
     out.tab[2:7, 4:5] <- DF[,1:2]
     
@@ -284,15 +345,36 @@ if(model == 'lasso'){
     #nested.reportResults(pred.train,y.train, outer.indecies, cf.f1, 'f1 prior')
     
     ## ba prior
-    nested.accuracy(pred.train, y.train, outer.indecies, cf = cf.ba)
-    DF <- nested.reportResults(pred.train,y.train, outer.indecies, cf.ba, 'ba prior')
+    ## nested.accuracy(pred.train, y.train, outer.indecies, cf = cf.ba)
+    DF <- nested.reportResults(pred.train,y.train, outer.indecies, cf.ba, 'ba prior', verbose = verbose)
     
     out.tab[2:7, 6:7] <- DF[,1:2]
     
     if(!is.null(output.file))
       write.table(out.tab, output.file, sep = '\t', quote = F, col.names = T, row.names = F)
     
-    cat('\n significant hypothesis\n')
-    print(sort(unique(Obj$sig.hyps)))
+    nonzero.genes  <- Obj$nonzero.genes
+    nonzero.coeffs <- Obj$nonzero.coeffs
+    
+    ents.mRNA = ents[ents$type == 'mRNA', ]
+    
+    L <- data.frame(genes = ents.mRNA[match(nonzero.genes, ents.mRNA$uid),], 
+                    coeffs = nonzero.coeffs, stringsAsFactors = F)
+    LL <- aggregate(L$coeffs, by = list(L$genes.uid),mean)
+    L <- cbind(L[match(LL[,1], L$genes.uid), c(1,2,3,4)], LL[,2])
+    colnames(L)[5] <- 'coeffs'
+    L <- L[which(abs(L$coeffs) >= quantile(abs(L$coeffs), prob = 0.75)),]
+    nonzero.groups <- cbind(ents[match(Obj$sig.hyps, ents$name),], NA)
+    colnames(nonzero.groups) <- colnames(L)
+    L <- rbind(nonzero.groups, L)
+    
+    if(!is.null(groups.file)){
+      write.table(L, groups.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
+    
+    if(verbose){
+      cat('\n significant hypothesis\n')
+      print(L)
+    }
   }
 }
