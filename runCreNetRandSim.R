@@ -17,6 +17,12 @@ option_list = list(
               help="path to the KB entries File"),
   make_option(c("-r", "--relations"),
               help="path to KB relations File"),
+  make_option(c("-x", "--subentries"),
+              help="path to sub KB entires File"),
+  make_option(c("-y", "--subrelations"),
+              help="path to the sub KB relations File"),
+  make_option(c("-j", "--percent"), default = 50,
+              help="percentage of the subnetwork to be shuffeled"),
   make_option(c("-d", "--traindata"),
               help="path to training data"),
   make_option(c("-t", "--testdata"), default = NULL,
@@ -52,6 +58,9 @@ model           <- opt$model
 measure         <- opt$risk
 ents.file       <- opt$entries
 rels.file       <- opt$relations
+sub.ents.file   <- opt$subentries
+sub.rels.file   <- opt$subrelations
+percent.shuffle <- opt$percent
 data.train.file <- opt$traindata
 data.test.file  <- opt$testdata
 nalphas         <- as.integer(opt$nalphas)
@@ -93,6 +102,29 @@ y.train <- L$y.train
 x.test <- L$x.test
 y.test <- L$y.test
 
+
+#### For randomizing
+randomizeKB <- function(ents, rels, rel.uid.fix)
+{
+  fix.rels  <- rels[rels$uid %in% rel.uid.fix, ]
+  rand.rels <- rels[!(rels$uid %in% rel.uid.fix), ]
+  rand.rels$trguid = rand.rels$trguid[sample(nrow(rand.rels))]
+  rand.rels$type   = rand.rels$type[sample(nrow(rand.rels))]
+  rels <- rbind(fix.rels, rand.rels)
+  rownames(rels) = 1:nrow(rels)
+  L = list(ents = ents, rels = rels)  
+  L
+}
+sub.ents <- read.table(sub.ents.file, header = T, sep = '\t', stringsAsFactors = F)
+sub.rels <- read.table(sub.rels.file, header = T, sep = '\t', stringsAsFactors = F)
+p.fix    <- floor(nrow(sub.rels) * (100 - percent.shuffle) / 100)
+if(p.fix >= 1){
+  rels.uid.fix <- sub.rels$uid[1:p.fix]
+  L <- randomizeKB(ents, rels, rels.uid.fix) 
+  ents <- L$ents
+  rels <- L$rels
+}
+
 ##print(method)
 ##print(model)
 ##print(groups.file)
@@ -111,8 +143,8 @@ if(model == 'lasso'){
       L <- reportNovelResults(pred.probs, 0.5, 'equal prior', verbose = verbose)
       L <- data.frame(y = L, probs = pred.probs, stringsAsFactors = F)
     }
-   
-     
+    
+    
     if(!is.null(output.file)){
       write.table(L, output.file, sep = '\t', col.names = T, row.names = F, quote = F)
     }
@@ -158,7 +190,7 @@ if(model == 'lasso'){
     if(!is.null(output.file)){
       write.table(L, output.file, sep = '\t', col.names = T, row.names = F, quote = F)
     }
-
+    
     nonzero.genes  <- Obj$nonzero.genes
     nonzero.coeffs <- Obj$nonzero.coeffs
     

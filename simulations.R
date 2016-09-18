@@ -189,15 +189,6 @@ node.stat.list = function(nodes, node.vals, ents, rels, evidence){
   L = list(correct = correct.num, incorrect = incorrect.num, zero = no.pred.num)
 }
 
-randomizeKB <- function(ents, rels)
-{
-  rand.rels = rels
-  rand.rels$trguid = rels$trguid[sample(nrow(rels))]
-  rand.rels$type   = rels$type[sample(nrow(rels))]
-  rownames(rand.rels) = 1:nrow(rand.rels)
-  L = list(ents = ents, rels = rand.rels)  
-  L
-}
 
 ########## Stat, pos-processing End
 
@@ -285,7 +276,7 @@ simDEGs <- function(ents, rels, nodes, values, p.c, p.m, p.z, p.p, alpha, beta){
 ## of the down regulated genes is set to (1/fc) * mu0 for the case where
 ## fc > 1. For the case fc < 1 the situation is reveresed. The variance
 ## of the negative binomial is mu + (mu^2)/r where r is the dispersion
-## parameter. The r value is set to mu/3 by default.
+## parameter. The r value is set to mu/3 by default. 
 ##
 ## INPUT
 ##
@@ -304,34 +295,38 @@ simDEGs <- function(ents, rels, nodes, values, p.c, p.m, p.z, p.p, alpha, beta){
 ## mu0     -    base-level mean (e.g., 100)
 ##
 ## r       -    dispersion parameter.
-simRNAseq <- function(ents, rels, n, m, degs, fc, mu0, r = NA){
+simRNAseq <- function(ents, rels, n, m, degs, fc = 2, mu0 = 3, r = NA){
   ents.mRNA <- ents[which(ents[,'type'] == 'mRNA'),]
+  numers <- unlist(lapply(ents.mRNA$id, pystr_isnumeric))
+  ents.mRNA <- ents.mRNA[numers,]
   x <- matrix(0, nrow = (n+m), ncol = nrow(ents.mRNA))
   if(is.na(r)){
     r <- mu0/3
   }
-  
+
   if(fc > 1){
     mu1 <- fc * mu0
-    mu2 <- (1 / fc) * mu0 
+    mu2 <- (1 / fc) * mu0
   }else{
     mu1 <- (1 / fc) * mu0
-    mu2 <- fc * mu0 
+    mu2 <- fc * mu0
   }
   
   ind.up   <- match(degs$id[degs$val == 1], ents.mRNA$id)
   ind.down <- match(degs$id[degs$val == -1], ents.mRNA$id)
-  
+  nn1 <- length(ind.up)
+  nn2 <- length(ind.down)
+  nn  <- nrow(ents.mRNA) - (nn1 + nn2)
   if(length(ind.up) > 0){
-    x[1:n, ind.up] = rnbinom(n = n, size = r, mu = mu1)
-    x[(n+1):(n+m), ind.up] = rnbinom(n = m, size = r, mu = mu2)
+    x[1:n, ind.up] = matrix(rnbinom(n = n*nn1, size = r, mu = mu1), nrow = n)
+    x[(n+1):(n+m), ind.up] = matrix(rnbinom(n = m*nn1, size = r, mu = mu2), nrow = m)
   }
   if(length(ind.down) > 0){
-    x[1:n, ind.down] = rnbinom(n = n, size = r, mu = mu2)
-    x[(n+1):(n+m), ind.down] = rnbinom(n = m, size = r, mu = mu1)
+    x[1:n, ind.down] = matrix(rnbinom(n = n*nn2, size = r, mu = mu2), nrow = n)
+    x[(n+1):(n+m), ind.down] = matrix(rnbinom(n = m*nn2, size = r, mu = mu1), nrow = m)
   }
   
-  x[,-c(ind.up, ind.down)] = rnbinom(n = (n+m), size = r, mu = mu0)
+  x[,-c(ind.up, ind.down)] = matrix(rnbinom(n = (n+m)*nn, size = r, mu = mu0), nrow = (n+m))
   
   dat <- data.frame(y = c(rep(1, n), rep(0, m)), x, stringsAsFactors = F)
   colnames(dat)[1] <- 'y'
@@ -340,104 +335,104 @@ simRNAseq <- function(ents, rels, n, m, degs, fc, mu0, r = NA){
   return(dat)
 }
 
-##############################
-
-######
-
-## Read in the BEL KB and generate a one-level network:
-ents.file = 'path-to-ents'
-rels.file = 'path-to-rels'
-L = processKB(ents.file, rels.file, verbose = F)
-
-ents = L$ents
-rels = L$rels
-
-## Need to pick a few hypothesis. Selecting hypothesis with reasonable number
-## of downstream genes (N)
-
-N = 50
-##pc.ents = ents[which(ents[,'type'] %in% c('Protein', 'Compound')),]
-pc.ents = ents[which(ents[,'type'] == 'Protein'),]
-
-pc.list = {}
-for(item in pc.ents[,1]){
-  L = nodeNet(node=item,ents,rels)
-  if(dim(L$rels)[1] > N){
-    pc.list = c(pc.list, item)
+## Simulating RNA-seq counts using a negative binomila distribution
+## Negative binomial captures the vairation technical and biological
+## replicates. This function simulates the data as follows. A base-line
+## expression mean mu0 is provided for simulating the counts of the genes
+## with differential expression status 0. Next given a fold change fc
+## the mean of the upregulated genes is set to fc * mu0 and the mean
+## of the down regulated genes is set to (1/fc) * mu0 for the case where
+## fc > 1. For the case fc < 1 the situation is reveresed. The variance
+## of the negative binomial is mu + (mu^2)/r where r is the dispersion
+## parameter. The r value is set to mu/3 by default. 
+##
+## Note: in this version fc will be selected at random between fc.min
+## and fc.max per pation, per gene.
+##
+## INPUT
+##
+## ents    -    network entities
+##
+## rels    -    network relations
+##
+## n       -    number of positive examples
+## 
+## m       -    number of negative examples
+##
+## degs    -    list of differentially expressed genes (output of simDEGs)
+##
+## fc.min  -    min fold change between the two conditions
+##
+## fc.max  -    max fold change between the two conditions
+##
+## mu0     -    base-level mean (e.g., 100)
+##
+## r       -    dispersion parameter.
+simRNAseq2 <- function(ents, rels, n, m, degs, fc.min = 1.1, fc.max = 2, mu0 = 3, r = NA){
+  ents.mRNA <- ents[which(ents[,'type'] == 'mRNA'),]
+  numers <- unlist(lapply(ents.mRNA$id, pystr_isnumeric))
+  ents.mRNA <- ents.mRNA[numers,]
+  x <- matrix(0, nrow = (n+m), ncol = nrow(ents.mRNA))
+  if(is.na(r)){
+    r <- mu0/3
   }
-}
 
-ents[match(pc.list, ents$uid),]
-## Candidate hypothesis.
-#print(ents[which(ents[,1] %in% pc.list), ])
+  ind.up   <- match(degs$id[degs$val == 1], ents.mRNA$id)
+  ind.down <- match(degs$id[degs$val == -1], ents.mRNA$id)
+  
+  nn1 <- length(ind.up)
+  nn2 <- length(ind.down)
+  nn  <- nrow(ents.mRNA)
 
-nodes = sample(ents[which(ents[,1] %in% pc.list), 1], 3)
-## Select a few nodes, for example:
-## 1) SMAD2
-## 2) TGFB1
-## nodes contains the uid of the selected nodes
-nodes = c('1279', '1445')
-values = c(1, 1)
-
-## Generate the network of the selected hypothesis and downstream genes.
-L = nodeNetList(nodes,ents,rels)
-
-
-## Parameter Values
-alpha     = 0.05 ## False positive prob
-beta      = 0.1  ## False negative prob
-p.c       = 0.1  ## Probability of edge being inapplicable
-p.m       = 0.1  ## backgorund probability of -1
-p.z       = 0.8  ## backgorund probability of  0
-p.p       = 0.1  ## backgorund probability of +1
-
-
-## Simulate the data:
-L = nodeNetList(nodes,ents,rels)
-
-sim.data = simDEGs(L$ents, L$rels, nodes, values, p.c, p.m, p.z, p.p, alpha, beta)
-sim.RNAseq = simRNAseq(ents, rels, 30, 30, sim.data, 2, 50)
-sim.RNAseq[,2:ncol(sim.RNAseq)] <- cpm(sim.RNAseq[,2:ncol(sim.RNAseq)])
-## Save the evidence.
-write.table(sim.RNAseq, 'path-to-output', row.names = F, quote = F, sep = '\t')
-
-
-
-
-## This needs to be double checked. Maybe the matrix needs to be transposed
-## From voom package we can use cpkm or rpkm for normalized gene expression values.
-dge <- rpkm(sim.RNAseq[,2:ncol(sim.RNAseq)])
-
-######
-src = unique(L$rels$srcuid)
-inds = {}
-inds.lens = {}
-for(s in src){
-  ind = which(rels$srcuid == s)
-  inds = c(inds, ind)
-  inds.lens = c(inds.lens,length(ind))
-}
-
-step.size = 10
-N = 100/step.size
-
-for(i in 0:N){
-  keep.ind = {}
-  strt = 1
-  for(j in 1:length(inds.lens)){
-    if(j == 1){
-      factor = 0
-    }else{
-      factor = inds.lens[j - 1]
-    }
-    strt = strt + factor
-    stp  = sum(inds.lens[1:j])
-    if(strt < strt + (stp  - strt) * (100 - i * step.size)/100){
-      keep.ind = c(keep.ind, inds[strt:(strt + (stp  - strt) * (100 - i * step.size)/100 - 1)])
+  if(length(ind.up) > 0){
+    for(jj in ind.up){
+      for(ii in 1:n){
+        fc = runif(1, fc.min, fc.max)
+        mu1 <- fc * mu0
+        x[ii, jj] = rnbinom(n = 1, size = r, mu = mu1)
+      }
+      for(ii in (n+1):(n+m)){
+        fc = runif(1, fc.min, fc.max)
+        mu2 <- (1/fc) * mu0
+        x[ii, jj] = rnbinom(n = 1, size = r, mu = mu2)
+      }
     }
   }
+  if(length(ind.down) > 0){
+    for(jj in ind.down){
+      for(ii in 1:n){
+        fc = runif(1, fc.min, fc.max)
+        mu1 <- (1/fc) * mu0
+        x[ii, jj] = rnbinom(n = 1, size = r, mu = mu1)
+      }
+      for(ii in (n+1):(n+m)){
+        fc = runif(1, fc.min, fc.max)
+        mu2 <- fc * mu0
+        x[ii, jj] = rnbinom(n = 1, size = r, mu = mu2)
+      }
+    }
+  }
+  
+  x[,-c(ind.up, ind.down)] = matrix(rnbinom(n = (n+m)* (nn - nn1 - nn2), size = r, mu = mu0), nrow = (n+m))
+  
+  dat <- data.frame(y = c(rep(1, n), rep(0, m)), x, stringsAsFactors = F)
+  colnames(dat)[1] <- 'y'
+  colnames(dat)[2:ncol(dat)] <- ents.mRNA$id
+  
+  return(dat)
 }
 
-rels.shuffle <- rels
-rels.shuffle$trguid <- rels$trguid[c(keep.ind,sample(setdiff(1:nrow(rels), keep.ind)))]
-
+#### Randomizing the network: The network of the selected regulators (L$rels)
+#### will be randomized as fllows. A fraction (n%) of the network is kept fixed and
+#### the rest of the network is randomized with the relations in the bigger network
+randomizeKB <- function(ents, rels, rel.uid.fix)
+{
+  fix.rels  <- rels[rels$uid %in% rel.uid.fix, ]
+  rand.rels <- rels[!(rels$uid %in% rel.uid.fix), ]
+  rand.rels$trguid = rand.rels$trguid[sample(nrow(rand.rels))]
+  rand.rels$type   = rand.rels$type[sample(nrow(rand.rels))]
+  rels <- rbind(fix.rels, rand.rels)
+  rownames(rels) = 1:nrow(rels)
+  L = list(ents = ents, rels = rand.rels)  
+  L
+}
