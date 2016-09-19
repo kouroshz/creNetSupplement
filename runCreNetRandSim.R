@@ -104,14 +104,21 @@ y.test <- L$y.test
 
 
 #### For randomizing
-randomizeKB <- function(ents, rels, rel.uid.fix)
+randomizeKB <- function(ents, rels, rel.uid.fix = NA)
 {
-  fix.rels  <- rels[rels$uid %in% rel.uid.fix, ]
-  rand.rels <- rels[!(rels$uid %in% rel.uid.fix), ]
-  rand.rels$trguid = rand.rels$trguid[sample(nrow(rand.rels))]
-  rand.rels$type   = rand.rels$type[sample(nrow(rand.rels))]
-  rels <- rbind(fix.rels, rand.rels)
-  rownames(rels) = 1:nrow(rels)
+  if(!is.na(rel.uid.fix)){
+    fix.rels  <- rels[rels$uid %in% rel.uid.fix, ]
+    rand.rels <- rels[!(rels$uid %in% rel.uid.fix), ]
+    rand.rels$trguid = rand.rels$trguid[sample(nrow(rand.rels))]
+    rand.rels$type   = rand.rels$type[sample(nrow(rand.rels))]
+    rels <- rbind(fix.rels, rand.rels)
+    rownames(rels) = 1:nrow(rels)
+  }else{
+    rels$trguid = rels$trguid[sample(nrow(rels))]
+    rels$type   = rels$type[sample(nrow(rels))]
+    rownames(rels) = 1:nrow(rels)
+  }
+  
   L = list(ents = ents, rels = rels)  
   L
 }
@@ -121,9 +128,12 @@ p.fix    <- floor(nrow(sub.rels) * (100 - percent.shuffle) / 100)
 if(p.fix >= 1){
   rels.uid.fix <- sub.rels$uid[1:p.fix]
   L <- randomizeKB(ents, rels, rels.uid.fix) 
-  ents <- L$ents
-  rels <- L$rels
+}else{
+  L <- randomizeKB(ents, rels) 
 }
+
+ents <- L$ents
+rels <- L$rels
 
 ##print(method)
 ##print(model)
@@ -249,6 +259,7 @@ if(model == 'lasso'){
     
     ## Training data
     data.train <- list(x=slice.train,y=y.train)
+    ## test
     
     
     ## Select alpha and lambda by 5-fold cross-validation
