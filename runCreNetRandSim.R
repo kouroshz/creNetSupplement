@@ -106,16 +106,16 @@ y.test <- L$y.test
 #### For randomizing
 randomizeKB <- function(ents, rels, rel.uid.fix = NA)
 {
-  if(!is.na(rel.uid.fix)){
+  if(!is.na(rel.uid.fix[1])){
     fix.rels  <- rels[rels$uid %in% rel.uid.fix, ]
     rand.rels <- rels[!(rels$uid %in% rel.uid.fix), ]
-    rand.rels$trguid = rand.rels$trguid[sample(nrow(rand.rels))]
-    rand.rels$type   = rand.rels$type[sample(nrow(rand.rels))]
+    rand.rels$trguid = rand.rels$trguid[sample(sample(nrow(rand.rels)))]
+    rand.rels$type   = rand.rels$type[sample(sample(nrow(rand.rels)))]
     rels <- rbind(fix.rels, rand.rels)
     rownames(rels) = 1:nrow(rels)
   }else{
-    rels$trguid = rels$trguid[sample(nrow(rels))]
-    rels$type   = rels$type[sample(nrow(rels))]
+    rels$trguid = rels$trguid[sample(sample(nrow(rels)))]
+    rels$type   = rels$type[sample(sample(nrow(rels)))]
     rownames(rels) = 1:nrow(rels)
   }
   
@@ -125,15 +125,20 @@ randomizeKB <- function(ents, rels, rel.uid.fix = NA)
 sub.ents <- read.table(sub.ents.file, header = T, sep = '\t', stringsAsFactors = F)
 sub.rels <- read.table(sub.rels.file, header = T, sep = '\t', stringsAsFactors = F)
 p.fix    <- floor(nrow(sub.rels) * (100 - percent.shuffle) / 100)
-if(p.fix >= 1){
-  rels.uid.fix <- sub.rels$uid[1:p.fix]
-  L <- randomizeKB(ents, rels, rels.uid.fix) 
-}else{
-  L <- randomizeKB(ents, rels) 
-}
 
-ents <- L$ents
-rels <- L$rels
+if(percent.shuffle > 0){
+  ##set.seed(1)
+  shuffle.ind <- sample(sample(1:nrow(sub.rels)))
+  if(p.fix >= 1){
+    rels.uid.fix <- sub.rels$uid[shuffle.ind[1:p.fix]]
+    L <- randomizeKB(ents, rels, rels.uid.fix) 
+  }else{
+    L <- randomizeKB(ents, rels) 
+  }
+  
+  ents <- L$ents
+  rels <- L$rels
+}
 
 ##print(method)
 ##print(model)

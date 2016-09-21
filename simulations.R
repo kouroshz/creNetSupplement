@@ -425,14 +425,21 @@ simRNAseq2 <- function(ents, rels, n, m, degs, fc.min = 1.1, fc.max = 2, mu0 = 3
 #### Randomizing the network: The network of the selected regulators (L$rels)
 #### will be randomized as fllows. A fraction (n%) of the network is kept fixed and
 #### the rest of the network is randomized with the relations in the bigger network
-randomizeKB <- function(ents, rels, rel.uid.fix)
+randomizeKB <- function(ents, rels, rel.uid.fix = NA)
 {
-  fix.rels  <- rels[rels$uid %in% rel.uid.fix, ]
-  rand.rels <- rels[!(rels$uid %in% rel.uid.fix), ]
-  rand.rels$trguid = rand.rels$trguid[sample(nrow(rand.rels))]
-  rand.rels$type   = rand.rels$type[sample(nrow(rand.rels))]
-  rels <- rbind(fix.rels, rand.rels)
-  rownames(rels) = 1:nrow(rels)
-  L = list(ents = ents, rels = rand.rels)  
+  if(!is.na(rel.uid.fix[1])){
+    fix.rels  <- rels[rels$uid %in% rel.uid.fix, ]
+    rand.rels <- rels[!(rels$uid %in% rel.uid.fix), ]
+    rand.rels$trguid = rand.rels$trguid[sample(sample(nrow(rand.rels)))]
+    rand.rels$type   = rand.rels$type[sample(sample(nrow(rand.rels)))]
+    rels <- rbind(fix.rels, rand.rels)
+    rownames(rels) = 1:nrow(rels)
+  }else{
+    rels$trguid = rels$trguid[sample(sample(nrow(rels)))]
+    rels$type   = rels$type[sample(sample(nrow(rels)))]
+    rownames(rels) = 1:nrow(rels)
+  }
+  
+  L = list(ents = ents, rels = rels)  
   L
 }
