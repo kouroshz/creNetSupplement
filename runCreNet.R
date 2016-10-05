@@ -189,15 +189,16 @@ if(model == 'lasso'){
   out.tab[1,1] <- 'stats'
   out.tab[1, 2:7] = rep(c('mean', 'sd'), 3)
   
+  if(type.weight %in% c('none', 'sqrt')){
+    filter <- FALSE
+  }
+  
   if(run.ms){
     if(verbose)
       cat(paste('\n Running Model', model, 'and method', method, '\n'))
     
     cat('\n running models selection and prediction \n')
     
-    if(type.weight %in% c('none', 'sqrt')){
-      filter <- FALSE
-    }
     if(verbose)
       cat('\n running CRE \n')
     CF <- creFilter(ents, rels, x.train, y.train, x.test, y.test, cre.sig = cre.sig, de.sig = de.sig,
