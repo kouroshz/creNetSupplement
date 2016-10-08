@@ -13,6 +13,8 @@ option_list = list(
               help="one of creNet or lasso. Default Value: creNet"),
   make_option(c("-k", "--risk"),default = 'auc',
               help="one of auc or ll. Default Value: auc"),
+  make_option(c("-u", "--uids"),default = NULL,
+              help="List of regulators to consider (comma separated string of uids). Default Value: NULL"),
   make_option(c("-e", "--entries"),
               help="path to the KB entries File"),
   make_option(c("-r", "--relations"),
@@ -50,6 +52,7 @@ opt <- parse_args(OptionParser(option_list=option_list))
 method          <- opt$method
 model           <- opt$model
 measure         <- opt$risk
+uids            <- opt$uids
 ents.file       <- opt$entries
 rels.file       <- opt$relations
 data.train.file <- opt$traindata
@@ -82,10 +85,15 @@ if(method == 'cv'){
   quit()
 }
 
+if(!is.null(uids)){
+  uids <- strsplit(uids, split = ",")[[1]]
+}
+
+
 if(verbose)
   cat('\n Prepare KB and Data \n')
 
-L <- processDataAndKB(ents.file, rels.file, data.train.file, data.test.file=data.test.file, verbose = FALSE)
+L <- processDataAndKB(ents.file, rels.file, data.train.file, data.test.file=data.test.file, verbose = FALSE, uids = uids)
 ents <- L$ents
 rels <- L$rels
 x.train <- L$x.train
@@ -193,13 +201,18 @@ if(model == 'lasso'){
     filter <- FALSE
   }
   
+  if(!is.null(uids)){
+    type.weight <- "none"
+    filter <- FALSE
+  }
+  
   if(run.ms){
     if(verbose)
       cat(paste('\n Running Model', model, 'and method', method, '\n'))
     
     cat('\n running models selection and prediction \n')
     
-    if(verbose)
+    if(verbose & is.null(uids))
       cat('\n running CRE \n')
     CF <- creFilter(ents, rels, x.train, y.train, x.test, y.test, cre.sig = cre.sig, de.sig = de.sig,
                     type.weight = type.weight, filter = filter, verbose = FALSE)
