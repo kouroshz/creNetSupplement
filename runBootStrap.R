@@ -76,7 +76,8 @@ alphas <- seq(0, 1, length.out = nalphas)
 G <- {}
 for(i in 1:num.iter){
   ## sample the training data.
-  ind <- unique(sample(1:n, size = n, replace = T))
+  ##ind <- unique(sample(1:n, size = n, replace = T))
+  ind <- sample(1:n, size = n, replace = T)
   x <- x.train[ind,]
   y <- y.train[ind]
   
