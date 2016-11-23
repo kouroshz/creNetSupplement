@@ -112,20 +112,17 @@ for(i in 1:num.iter){
   nonzero.genes <- unique(unlist(lapply(best.beta, function(x) which(x != 0))))
   nonzero.groups <- ents[which(ents$uid %in% unique(uid.groups[unique(nonzero.genes)])),]
 
-  
-  cat('\n non-zero groups \n')
-  print(nonzero.groups)
-  
   G <- c(G,nonzero.groups$name)
 }
 
 
-rle(G)$lengths
-rle(G)$values
-
 nonzero.groups = data.frame(nonzero.groups = rle(G)$values, 
                             frequencies = rle(G)$lengths, stringsAsFactors = F)
+
+cat('\n non-zero groups \n')
+print(nonzero.groups)
+
 if(!is.null(output.file))
-  write.table(nonzero.groups, groups.file, sep = '\t', quote = F, col.names = T, 
+  write.table(nonzero.groups, output.file, sep = '\t', quote = F, col.names = T, 
               row.names = F)
 
