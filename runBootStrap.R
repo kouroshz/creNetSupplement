@@ -54,7 +54,8 @@ output.file     <- opt$outfile
 ## Required libraires
 require(creNet)
 
-L <- processDataAndKB(ents.file, rels.file, data.train.file, data.test.file=NULL, verbose = FALSE, uids = uids)
+L <- processDataAndKB(ents.file, rels.file, data.train.file, data.test.file=NULL, 
+                      verbose = FALSE, uids = NULL)
 ents <- L$ents
 rels <- L$rels
 x.train <- L$x.train
