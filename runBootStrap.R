@@ -15,6 +15,8 @@ option_list = list(
               help="path to training data"),
   make_option(c("-a", "--nalphas"), default = 1,
               help="number of alphas to try: Default Value: 1 corresponding to alpha = 0 for pure group lasso"),
+  make_option(c("-k", "--risk"),default = 'auc',
+              help="one of auc or ll. Default Value: auc"),
   make_option(c("-l", "--nlambdas"), default = 100,
               help="number of lambdas to try: Default Value: 100"),
   make_option(c("-w", "--weight"), default = 'cre',
@@ -39,6 +41,7 @@ opt <- parse_args(OptionParser(option_list=option_list))
 
 ents.file       <- opt$entries
 rels.file       <- opt$relations
+measure         <- opt$risk
 data.train.file <- opt$traindata
 nalphas         <- as.integer(opt$nalphas)
 nlam            <- as.integer(opt$nlambdas)
