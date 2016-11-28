@@ -394,7 +394,7 @@ if(model == 'lasso'){
       cat(paste('\n Running Model', model, 'and method', method, '\n'))
     
     cat('\n running nested cre cv')
-    Obj <- nested.cvSGL(ents, rels, x.train, y.train, type = "logit", alphas=alphas, 
+    Obj <- nested.cvSGL(ents, rels, x.train, y.train, type = "logit", alphas=alphas, LOOCV=LOOCV, 
                         nlam=nlam, num.iter = num.iter,RNAseq=RNAseq,
                         type.weight = type.weight, filter = filter,
                         standardize=standardize, measure = "auc", 

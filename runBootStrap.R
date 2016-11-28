@@ -196,7 +196,7 @@ if(model == 'lasso'){
     nonzero.genes <- unique(unlist(lapply(best.beta, function(x) which(x != 0))))
     nonzero.groups <- ents[which(ents$uid %in% unique(uid.groups[unique(nonzero.genes)])),]
     
-    G <- c(G,nonzero.groups$name)
+    G <- c(G,as.character(nonzero.groups$name))
   }
   
   G <- sort(G)
