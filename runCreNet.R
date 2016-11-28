@@ -31,6 +31,10 @@ option_list = list(
               help="weight type. 1) cre, 2) log.cre, 3) sqrt, 4) both, 5) none"),
   make_option(c("-f", "--filter"), default = TRUE,
               help="apply cre filter. Default value: TRUE"),
+  make_option(c("-R", "--RNAseq"), default = FALSE,
+              help="Data is fpkm gene values. Default Value: FALSE"),
+  make_option(c("-L", "--LOOCV"), default = FALSE,
+              help="Perform loocv. Default Value: FALSE"),
   make_option(c("-i", "--iternum"), default = 10,
               help="Number of iteration to reduce CV variability and get confidence intervals. Default: 10"),
   make_option(c("-c", "--crecutoff"), default = 0.01,
@@ -60,7 +64,9 @@ data.test.file  <- opt$testdata
 nalphas         <- as.integer(opt$nalphas)
 nlam            <- as.integer(opt$nlambdas)
 type.weight     <- opt$weight
-filter          <- opt$filter
+filter          <- as.logical(opt$filter)
+RNAseq          <- as.logical(opt$RNAseq)
+LOOCV           <- as.logical(opt$LOOCV)
 num.iter        <- opt$iternum
 cre.sig         <- opt$crecutoff
 de.sig          <- opt$pvaluecutoff
@@ -93,23 +99,42 @@ if(!is.null(uids)){
 if(verbose)
   cat('\n Prepare KB and Data \n')
 
-L <- processDataAndKB(ents.file, rels.file, data.train.file, data.test.file=data.test.file, verbose = FALSE, uids = uids)
+if(model == 'lasso'){
+  isLasso = TRUE
+}else{
+  isLasso = FALSE
+}
+L <- processDataAndKB(ents.file, rels.file, data.train.file, 
+                      data.test.file=data.test.file, verbose = FALSE, 
+                      uids = uids, isLasso = isLasso)
 ents <- L$ents
 rels <- L$rels
 x.train <- L$x.train
 y.train <- L$y.train
-x.test <- L$x.test
-y.test <- L$y.test
+x.test  <- L$x.test
+y.test  <- L$y.test
 
-##print(method)
-##print(model)
-##print(groups.file)
+if(LOOCV){
+  nfold = length(y.train) - 1
+}else{
+  nfold = 4
+}
 
+if(RNAseq){
+  x.train <- x.train + 0.25
+  x.train <- log(x.train)
+  if(!is.null(x.test)){
+    x.test <- x.test + 0.25
+    x.test <- log(x.test)
+  }
+}
 if(model == 'lasso'){
+  
   if(run.ms){
     if(verbose)
       cat(paste('\n Running Model', model, 'and method', method, '\n'))
-    fit <- cvGlmnet(x.train, y.train, x.test, y.test, num.iter = num.iter, nfold = 5, alpha = 1)
+    fit <- cvGlmnet(x.train, y.train, x.test, y.test, num.iter = num.iter, 
+                    nfold = (nfold+1), alpha = 1)
     pred.probs <- fit$test.probs
     
     if(method == 'test'){
@@ -128,14 +153,29 @@ if(model == 'lasso'){
     nonzero.genes  <- fit$nonzero.genes
     nonzero.coeffs <- fit$nonzero.coeffs
     
-    ents.mRNA = ents[ents$type == 'mRNA', ]
-    
-    L <- data.frame(genes = ents.mRNA[match(nonzero.genes, ents.mRNA$id),], 
-                    coeffs = nonzero.coeffs, stringsAsFactors = F)
-    
-    LL <- aggregate(L$coeffs, by = list(L$genes.uid),mean)
-    L <- cbind(L[match(LL[,1], L$genes.uid), c(1,2,3,4)], LL[,2])
-    colnames(L)[5] <- 'coeffs'
+    if(!is.null(uids)){
+      ents.mRNA = ents[ents$type == 'mRNA', ]
+      
+      L <- data.frame(genes = ents.mRNA[match(nonzero.genes, ents.mRNA$id),], 
+                      coeffs = nonzero.coeffs, stringsAsFactors = F)
+      
+      LL <- aggregate(L$coeffs, by = list(L$genes.uid),mean)
+      L <- cbind(L[match(LL[,1], L$genes.uid), c(1,2,3,4)], LL[,2])
+      colnames(L)[5] <- 'coeffs'
+    }else{
+      library(org.Hs.eg.db)
+      library(dplyr)
+      x <- org.Hs.egALIAS2EG
+      mapped_genes <- mappedkeys(x)
+      xx = as.list(x[mapped_genes])
+      MapNam <-  data.frame(symbols = names(unlist(xx)), 
+                            entrez = unlist(xx), stringsAsFactors = F)
+      xx <- merge(nonzero.genes, MapNam, by.x = 1, by.y = 2)
+      
+      L <- data.frame(entrez = nonzero.genes,  
+                      coeffs = nonzero.coeffs, stringsAsFactors = F)
+      L <- merge(xx, L, by.x = 1, by.y = 1)
+    }
     
     if(!is.null(groups.file)){
       write.table(L, groups.file, sep = '\t', col.names = T, row.names = F, quote = F)
@@ -151,7 +191,7 @@ if(model == 'lasso'){
       cat(paste('\n Running Model', model, 'and method', method, '\n'))
     
     cat('\n running nested cre cv')
-    Obj <- nested.cvGlmnet(x.train, y.train, num.iter = num.iter, nfold = 4, verbose = verbose)
+    Obj <- nested.cvGlmnet(x.train, y.train, num.iter = num.iter, nfold = nfold, verbose = verbose)
     pred.train <- Obj$pred
     outer.indecies <- Obj$outer.indecies
     
@@ -170,16 +210,34 @@ if(model == 'lasso'){
     nonzero.genes  <- Obj$nonzero.genes
     nonzero.coeffs <- Obj$nonzero.coeffs
     
-    
-    ents.mRNA = ents[ents$type == 'mRNA', ]
-    
-    L <- data.frame(genes = ents.mRNA[match(nonzero.genes, ents.mRNA$id),], 
-                    coeffs = nonzero.coeffs[match(nonzero.genes, names(nonzero.coeffs))], stringsAsFactors = F)
-    
-    LL <- aggregate(L$coeffs, by = list(L$genes.uid),mean)
-    L <- cbind(L[match(LL[,1], L$genes.uid), c(1,2,3,4)], LL[,2])
-    colnames(L)[5] <- 'coeffs'
-    
+    if(!is.null(uids)){
+      
+      ents.mRNA = ents[ents$type == 'mRNA', ]
+      
+      L <- data.frame(genes = ents.mRNA[match(nonzero.genes, ents.mRNA$id),], 
+                      coeffs = nonzero.coeffs[match(nonzero.genes, names(nonzero.coeffs))], stringsAsFactors = F)
+      
+      LL <- aggregate(L$coeffs, by = list(L$genes.uid),mean)
+      L <- cbind(L[match(LL[,1], L$genes.uid), c(1,2,3,4)], LL[,2])
+      colnames(L)[5] <- 'coeffs'
+    }else{
+      library(org.Hs.eg.db)
+      library(dplyr)
+      x <- org.Hs.egALIAS2EG
+      mapped_genes <- mappedkeys(x)
+      xx = as.list(x[mapped_genes])
+      MapNam <-  data.frame(symbols = names(unlist(xx)), 
+                            entrez = unlist(xx), stringsAsFactors = F)
+      xx <- merge(unique(nonzero.genes), MapNam, by.x = 1, by.y = 2)
+      
+      L <- data.frame(entrez = nonzero.genes,  
+                      coeffs = nonzero.coeffs, stringsAsFactors = F)
+      L <- merge(xx, L, by.x = 1, by.y = 1)
+      L = L %>% group_by(x,symbols) %>% summarise(mean_coeff = mean(coeffs))
+      colnames(L) = c('entrez', 'name', 'coeff')
+      L = L[!duplicated(cbind(L$entrez, L$coeff)),]
+    }
+        
     if(!is.null(groups.file)){
       write.table(L, groups.file, sep = '\t', col.names = T, row.names = F, quote = F)
     }
@@ -214,7 +272,8 @@ if(model == 'lasso'){
     
     if(verbose & is.null(uids))
       cat('\n running CRE \n')
-    CF <- creFilter(ents, rels, x.train, y.train, x.test, y.test, cre.sig = cre.sig, de.sig = de.sig,
+    CF <- creFilter(ents, rels, x.train, y.train, x.test, y.test, cre.sig = cre.sig, 
+                    de.sig = de.sig, RNAseq = RNAseq, 
                     type.weight = type.weight, filter = filter, verbose = FALSE)
     
     
@@ -234,8 +293,10 @@ if(model == 'lasso'){
     
     
     ## Select alpha and lambda by 5-fold cross-validation
-    fit.cv <- cvSGL(data.train, index=groups, weights=weights, standardize = standardize, type="logit", 
-                    num.iter = num.iter, alphas=alphas, nlam=nlam, measure=measure, ncores=1, verbose=verbose, nfold=5)
+    fit.cv <- cvSGL(data.train, index=groups, weights=weights, 
+                    standardize = standardize, type="logit", 
+                    num.iter = num.iter, alphas=alphas, nlam=nlam, 
+                    measure=measure, ncores=1, verbose=verbose, nfold=(nfold + 1))
     
     ## Predict responses for testing data with best (alpha,lambda) values
     ## Testing data are self-standardized (use standardize="train" to use the mean & variances of training data)
@@ -251,7 +312,8 @@ if(model == 'lasso'){
       
       ## best ROC threshold dist adjustment
       cf.dist <- unlist(lapply(fit.cv$fit, function(x) x$opt.thresh.dist))
-      DF <- reportResults(pred.test,y.test, cf.dist , 'best ROC threshold dist adjustment', verbose = verbose)
+      DF <- reportResults(pred.test,y.test, cf.dist , 'best ROC threshold dist adjustment', 
+                          verbose = verbose)
       
       out.tab[2:7, 4:5] <- DF[,1:2]
       
@@ -332,10 +394,12 @@ if(model == 'lasso'){
       cat(paste('\n Running Model', model, 'and method', method, '\n'))
     
     cat('\n running nested cre cv')
-    Obj <- nested.cvSGL(ents, rels, x.train, y.train, type = "logit", alphas=alphas, nlam=nlam, num.iter = num.iter,
-                        type.weight = type.weight, filter = filter,standardize=standardize, measure = "auc", 
+    Obj <- nested.cvSGL(ents, rels, x.train, y.train, type = "logit", alphas=alphas, 
+                        nlam=nlam, num.iter = num.iter,RNAseq=RNAseq,
+                        type.weight = type.weight, filter = filter,
+                        standardize=standardize, measure = "auc", 
                         verbose = verbose,
-                        nfold=4, ncores=1)
+                        nfold=nfold, ncores=1)
     
     pred.train     <- Obj$pred
     cf.dist        <- Obj$opt.thresh.dist
