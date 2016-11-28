@@ -136,7 +136,7 @@ if(model == 'lasso'){
                     coeffs = nonzero.coeffs, stringsAsFactors = F)
     L <- merge(xx, L, by.x = 1, by.y = 1)
     colnames(L) = c('entrez', 'name', 'coeff')
-    G <- c(G,unique(L$entrez))
+    G <- c(G,as.character(unique(L$entrez)))
   }
   
   G <- sort(G)
