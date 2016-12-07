@@ -48,7 +48,9 @@ option_list = list(
   make_option(c("-o", "--outfile"), default = NULL,
               help="path to the output prediction results file (optional)"),
   make_option(c("-z", "--groupsfile"), default = NULL,
-              help="path to the output nonzero groups files (optional)"))
+              help="path to the output nonzero groups files (optional)"),
+  make_option(c("-x", "--rocfile"), default = NULL,
+              help="path to the output ROC curve files (optional)"))
 
 ## Parsing the input argument
 opt <- parse_args(OptionParser(option_list=option_list))
@@ -74,6 +76,7 @@ verbose         <- as.logical(opt$verbose)
 standardize     <- opt$standardize
 output.file     <- opt$outfile
 groups.file     <- opt$groupsfile
+roc.file        <- opt$rocfile
 
 ## Required libraires
 require(creNet)
@@ -138,8 +141,9 @@ if(model == 'lasso'){
     pred.probs <- fit$test.probs
     
     if(method == 'test'){
-      L <- reportResults(pred.probs,y.test, 0.5, 'equal prior', verbose = verbose)
-      L <- data.frame(test = rownames(L), L, stringsAsFactors = F)
+      L   <- reportResults(pred.probs,y.test, 0.5, 'equal prior', verbose = verbose)
+      ROC <- L$ROC
+      L   <- data.frame(test = rownames(L$DF), L$DF, stringsAsFactors = F)
     }else if(method == 'novel'){
       L <- reportNovelResults(pred.probs, 0.5, 'equal prior', verbose = verbose)
       L <- data.frame(y = L, probs = pred.probs, stringsAsFactors = F)
@@ -149,6 +153,12 @@ if(model == 'lasso'){
     if(!is.null(output.file)){
       write.table(L, output.file, sep = '\t', col.names = T, row.names = F, quote = F)
     }
+    
+    
+    if(!is.null(roc.file)){
+      write.table(ROC, roc.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
+    
     
     nonzero.genes  <- fit$nonzero.genes
     nonzero.coeffs <- fit$nonzero.coeffs
@@ -177,6 +187,8 @@ if(model == 'lasso'){
       L <- merge(xx, L, by.x = 1, by.y = 1)
     }
     
+ 
+    
     if(!is.null(groups.file)){
       write.table(L, groups.file, sep = '\t', col.names = T, row.names = F, quote = F)
     }
@@ -197,7 +209,8 @@ if(model == 'lasso'){
     
     ## equal prior
     L <- nested.reportResults(pred.train,y.train, outer.indecies, 0.5, 'equal prior', verbose = verbose)
-    L <- data.frame(test = rownames(L), L, stringsAsFactors = F)
+    ROC <- L$ROC
+    L <- data.frame(test = rownames(L$DF), L$DF, stringsAsFactors = F)
     
     #if(verbose){
     #  print(nested.accuracy(pred.train, y.train, outer.indecies, cf = 0.5))
@@ -207,6 +220,10 @@ if(model == 'lasso'){
       write.table(L, output.file, sep = '\t', col.names = T, row.names = F, quote = F)
     }
 
+    if(!is.null(roc.file)){
+      write.table(ROC, roc.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
+    
     nonzero.genes  <- Obj$nonzero.genes
     nonzero.coeffs <- Obj$nonzero.coeffs
     
@@ -238,6 +255,7 @@ if(model == 'lasso'){
       L = L[!duplicated(cbind(L$entrez, L$coeff)),]
     }
         
+    
     if(!is.null(groups.file)){
       write.table(L, groups.file, sep = '\t', col.names = T, row.names = F, quote = F)
     }
@@ -306,7 +324,8 @@ if(model == 'lasso'){
     if(method == 'test'){
       ## equal prior
       DF <- reportResults(pred.test,y.test, 0.5, 'equal prior', verbose = verbose)
-      
+      ROC <- DF$ROC
+      DF <- DF$DF
       out.tab[2:7, 2:3] <- DF[,1:2]
       out.tab[2:7, 1] <- rownames(DF)
       
@@ -314,7 +333,7 @@ if(model == 'lasso'){
       cf.dist <- unlist(lapply(fit.cv$fit, function(x) x$opt.thresh.dist))
       DF <- reportResults(pred.test,y.test, cf.dist , 'best ROC threshold dist adjustment', 
                           verbose = verbose)
-      
+      DF <- DF$DF
       out.tab[2:7, 4:5] <- DF[,1:2]
       
       ## best ROC threshold F1 adjustment
@@ -324,10 +343,15 @@ if(model == 'lasso'){
       ## best ROC threshold ba adjustment
       cf.ba <- unlist(lapply(fit.cv$fit, function(x) x$opt.thresh.ba))
       DF <- reportResults(pred.test,y.test, cf.ba, 'best ROC threshold ba adjustment', verbose = verbose)
+      DF <- DF$DF
       out.tab[2:7, 6:7] <- DF[,1:2]
       
       if(!is.null(output.file)){
         write.table(out.tab, output.file, sep = '\t', quote = F, col.names = T, row.names = F)
+      }
+      
+      if(!is.null(roc.file)){
+        write.table(ROC, roc.file, sep = '\t', quote = F, col.names = T, row.names = F)
       }
       
     }else{
@@ -410,15 +434,16 @@ if(model == 'lasso'){
     
     ## equal prior
     ##nested.accuracy(pred.train, y.train, outer.indecies, cf = 0.5)
-    DF <- nested.reportResults(pred.train,y.train, outer.indecies, 0.5, 'equal prior', verbose = verbose)
-    
+    DF  <- nested.reportResults(pred.train,y.train, outer.indecies, 0.5, 'equal prior', verbose = verbose)
+    ROC <- DF$ROC
+    DF  <- DF$DF
     out.tab[2:7, 2:3] <- DF[,1:2]
     out.tab[2:7, 1] <- rownames(DF)
     
     ## dist prior
     ##nested.accuracy(pred.train, y.train, outer.indecies, cf = cf.dist)
     DF <- nested.reportResults(pred.train,y.train, outer.indecies, cf.dist, 'dist prior', verbose = verbose)
-    
+    DF <- DF$DF
     out.tab[2:7, 4:5] <- DF[,1:2]
     
     ## f1 prior
@@ -428,11 +453,14 @@ if(model == 'lasso'){
     ## ba prior
     ## nested.accuracy(pred.train, y.train, outer.indecies, cf = cf.ba)
     DF <- nested.reportResults(pred.train,y.train, outer.indecies, cf.ba, 'ba prior', verbose = verbose)
-    
+    DF <- DF$DF
     out.tab[2:7, 6:7] <- DF[,1:2]
     
     if(!is.null(output.file))
       write.table(out.tab, output.file, sep = '\t', quote = F, col.names = T, row.names = F)
+    
+    if(!is.null(roc.file))
+      write.table(ROC, roc.file, sep = '\t', quote = F, col.names = T, row.names = F)
     
     nonzero.genes  <- Obj$nonzero.genes
     nonzero.coeffs <- Obj$nonzero.coeffs
@@ -444,7 +472,7 @@ if(model == 'lasso'){
     LL <- aggregate(L$coeffs, by = list(L$genes.uid),mean)
     L <- cbind(L[match(LL[,1], L$genes.uid), c(1,2,3,4)], LL[,2])
     colnames(L)[5] <- 'coeffs'
-    L <- L[which(abs(L$coeffs) >= quantile(abs(L$coeffs), prob = 0.75)),]
+    #L <- L[which(abs(L$coeffs) >= quantile(abs(L$coeffs), prob = 0.75)),]
     nonzero.groups <- cbind(ents[match(Obj$sig.hyps, ents$name),], NA)
     colnames(nonzero.groups) <- colnames(L)
     L <- rbind(nonzero.groups, L)
