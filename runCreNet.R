@@ -109,7 +109,7 @@ if(model == 'lasso'){
 }
 L <- processDataAndKB(ents.file, rels.file, data.train.file, 
                       data.test.file=data.test.file, verbose = FALSE, 
-                      uids = uids, isLasso = isLasso)
+                      uids = uids)
 ents <- L$ents
 rels <- L$rels
 x.train <- L$x.train
