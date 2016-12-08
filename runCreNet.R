@@ -268,7 +268,7 @@ if(model == 'lasso'){
   }
 }else{
   alphas <- seq(0, 1, length.out = nalphas)
-  out.tab <- data.frame(matrix(-1, nrow = 7, ncol = 7), stringsAsFactors = F)
+  out.tab <- data.frame(matrix(-1, nrow = 8, ncol = 7), stringsAsFactors = F)
   colnames(out.tab) <- c('test', 'ep', 'ep', 'dist', 'dist', 'ba', 'ba')
   out.tab[1,1] <- 'stats'
   out.tab[1, 2:7] = rep(c('mean', 'sd'), 3)
@@ -326,15 +326,15 @@ if(model == 'lasso'){
       DF <- reportResults(pred.test,y.test, 0.5, 'equal prior', verbose = verbose)
       ROC <- DF$ROC
       DF <- DF$DF
-      out.tab[2:7, 2:3] <- DF[,1:2]
-      out.tab[2:7, 1] <- rownames(DF)
+      out.tab[2:8, 2:3] <- DF[,1:2]
+      out.tab[2:8, 1] <- rownames(DF)
       
       ## best ROC threshold dist adjustment
       cf.dist <- unlist(lapply(fit.cv$fit, function(x) x$opt.thresh.dist))
       DF <- reportResults(pred.test,y.test, cf.dist , 'best ROC threshold dist adjustment', 
                           verbose = verbose)
       DF <- DF$DF
-      out.tab[2:7, 4:5] <- DF[,1:2]
+      out.tab[2:8, 4:5] <- DF[,1:2]
       
       ## best ROC threshold F1 adjustment
       #cf.f1 <- unlist(lapply(fit.cv$fit, function(x) x$opt.thresh.f1))
@@ -344,7 +344,7 @@ if(model == 'lasso'){
       cf.ba <- unlist(lapply(fit.cv$fit, function(x) x$opt.thresh.ba))
       DF <- reportResults(pred.test,y.test, cf.ba, 'best ROC threshold ba adjustment', verbose = verbose)
       DF <- DF$DF
-      out.tab[2:7, 6:7] <- DF[,1:2]
+      out.tab[2:8, 6:7] <- DF[,1:2]
       
       if(!is.null(output.file)){
         write.table(out.tab, output.file, sep = '\t', quote = F, col.names = T, row.names = F)
@@ -437,14 +437,14 @@ if(model == 'lasso'){
     DF  <- nested.reportResults(pred.train,y.train, outer.indecies, 0.5, 'equal prior', verbose = verbose)
     ROC <- DF$ROC
     DF  <- DF$DF
-    out.tab[2:7, 2:3] <- DF[,1:2]
-    out.tab[2:7, 1] <- rownames(DF)
+    out.tab[2:8, 2:3] <- DF[,1:2]
+    out.tab[2:8, 1] <- rownames(DF)
     
     ## dist prior
     ##nested.accuracy(pred.train, y.train, outer.indecies, cf = cf.dist)
     DF <- nested.reportResults(pred.train,y.train, outer.indecies, cf.dist, 'dist prior', verbose = verbose)
     DF <- DF$DF
-    out.tab[2:7, 4:5] <- DF[,1:2]
+    out.tab[2:8, 4:5] <- DF[,1:2]
     
     ## f1 prior
     #nested.accuracy(pred.train, y.train, outer.indecies, cf = cf.f1)
@@ -454,7 +454,7 @@ if(model == 'lasso'){
     ## nested.accuracy(pred.train, y.train, outer.indecies, cf = cf.ba)
     DF <- nested.reportResults(pred.train,y.train, outer.indecies, cf.ba, 'ba prior', verbose = verbose)
     DF <- DF$DF
-    out.tab[2:7, 6:7] <- DF[,1:2]
+    out.tab[2:8, 6:7] <- DF[,1:2]
     
     if(!is.null(output.file))
       write.table(out.tab, output.file, sep = '\t', quote = F, col.names = T, row.names = F)
