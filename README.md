@@ -1,5 +1,6 @@
 # creNetScripts
 Example runs and command line scripts for facilitating creNET runs.
+
 After installing the package creNet, use the following command line to run the program.
 
 ##USAGE##
@@ -11,7 +12,7 @@ For test run:
 ```{R}
 ./runCreNet.R -n creNet -m test -e ./KB/STRING_BEL_IREF.ents -r ./KB/STRING_BEL_IREF.rels -d ./test_data/UC1.txt -t ./test_data/UC2.txt -o ./results.txt -z ./significant_genes.txt
 ```
-Arguments:
+###Arguments:###
 1) -n creNet: run the program in creNet mode.
 2) -m test: run the program for independent train and test
 3) -i 3: run the program using 3 iterations to get mean and standard deviations for accuracy measures.
