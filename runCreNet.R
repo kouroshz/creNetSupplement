@@ -224,8 +224,9 @@ if(model == 'lasso'){
       write.table(ROC, roc.file, sep = '\t', col.names = T, row.names = F, quote = F)
     }
     
-    nonzero.genes  <- Obj$nonzero.genes
+    ##nonzero.genes  <- Obj$nonzero.genes
     nonzero.coeffs <- Obj$nonzero.coeffs
+    nonzero.genes  <- names(Obj$nonzero.coeffs)
     
     if(!is.null(uids)){
       
@@ -238,8 +239,8 @@ if(model == 'lasso'){
       L <- cbind(L[match(LL[,1], L$genes.uid), c(1,2,3,4)], LL[,2])
       colnames(L)[5] <- 'coeffs'
     }else{
-      library(org.Hs.eg.db)
-      library(dplyr)
+      require(org.Hs.eg.db)
+      require(dplyr)
       x <- org.Hs.egALIAS2EG
       mapped_genes <- mappedkeys(x)
       xx = as.list(x[mapped_genes])
