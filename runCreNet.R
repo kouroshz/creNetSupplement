@@ -2,7 +2,7 @@
 ##
 ## Runner Script for creNet
 ###############################################################################
-
+library(methods)
 suppressPackageStartupMessages(library("optparse"))
 
 ## Parsing the commandline input
@@ -103,13 +103,13 @@ if(verbose)
   cat('\n Prepare KB and Data \n')
 
 if(model == 'lasso'){
-  isLasso = TRUE
+  isLasso = FALSE
 }else{
   isLasso = FALSE
 }
 L <- processDataAndKB(ents.file, rels.file, data.train.file, 
                       data.test.file=data.test.file, verbose = FALSE, 
-                      uids = uids)
+                      uids = uids,isLasso = isLasso)
 ents <- L$ents
 rels <- L$rels
 x.train <- L$x.train
@@ -136,7 +136,7 @@ if(model == 'lasso'){
   if(run.ms){
     if(verbose)
       cat(paste('\n Running Model', model, 'and method', method, '\n'))
-    fit <- cvGlmnet(x.train, y.train, x.test, y.test, num.iter = num.iter, 
+    fit <- cvGlmnet(data.matrix(x.train), y.train, data.matrix(x.test), y.test, num.iter = num.iter, 
                     nfold = (nfold+1), alpha = 1)
     pred.probs <- fit$test.probs
     
@@ -195,7 +195,7 @@ if(model == 'lasso'){
     
     if(verbose){
       cat('\n significant hypothesis\n')
-      print(L)
+      #print(L)
     }
     
   }else{
@@ -256,6 +256,163 @@ if(model == 'lasso'){
       L = L[!duplicated(cbind(L$entrez, L$coeff)),]
     }
         
+    
+    if(!is.null(groups.file)){
+      write.table(L, groups.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
+    
+    if(verbose){
+      cat('\n significant hypothesis\n')
+      print(L)
+    }
+    
+  }
+}else if(model == 'flasso'){ ## Lasso applied on CRE filtered data
+  type.weight <- 'none' 
+  filter <- TRUE
+  
+  if(!is.null(uids)){
+    type.weight <- "none"
+    filter <- FALSE
+  }
+  
+  if(verbose)
+    cat(paste('\n Running Model', model, 'and method', method, '\n'))
+  
+  cat('\n running models selection and prediction \n')
+  
+  if(verbose & is.null(uids))
+    cat('\n running CRE \n')
+  CF <- creFilter(ents, rels, x.train, y.train, x.test, y.test, cre.sig = cre.sig, 
+                  de.sig = de.sig, RNAseq = RNAseq, 
+                  type.weight = type.weight, filter = filter, verbose = FALSE)
+  
+  x.train <- CF$x.train
+  x.test  <- CF$x.test
+ 
+  if(run.ms){
+    if(verbose)
+      cat(paste('\n Running Model', model, 'and method', method, '\n'))
+    fit <- cvGlmnet(data.matrix(x.train), y.train, data.matrix(x.test), y.test, num.iter = num.iter, 
+                    nfold = (nfold+1), alpha = 1)
+    pred.probs <- fit$test.probs
+    
+    if(method == 'test'){
+      L   <- reportResults(pred.probs,y.test, 0.5, 'equal prior', verbose = verbose)
+      ROC <- L$ROC
+      L   <- data.frame(test = rownames(L$DF), L$DF, stringsAsFactors = F)
+    }else if(method == 'novel'){
+      L <- reportNovelResults(pred.probs, 0.5, 'equal prior', verbose = verbose)
+      L <- data.frame(y = L, probs = pred.probs, stringsAsFactors = F)
+    }
+    
+    
+    if(!is.null(output.file)){
+      write.table(L, output.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
+    
+    
+    if(!is.null(roc.file)){
+      write.table(ROC, roc.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
+    
+    
+    nonzero.genes  <- fit$nonzero.genes
+    nonzero.coeffs <- fit$nonzero.coeffs
+    
+    if(!is.null(uids)){
+      ents.mRNA = ents[ents$type == 'mRNA', ]
+      
+      L <- data.frame(genes = ents.mRNA[match(nonzero.genes, ents.mRNA$id),], 
+                      coeffs = nonzero.coeffs, stringsAsFactors = F)
+      
+      LL <- aggregate(L$coeffs, by = list(L$genes.uid),mean)
+      L <- cbind(L[match(LL[,1], L$genes.uid), c(1,2,3,4)], LL[,2])
+      colnames(L)[5] <- 'coeffs'
+    }else{
+      library(org.Hs.eg.db)
+      library(dplyr)
+      x <- org.Hs.egALIAS2EG
+      mapped_genes <- mappedkeys(x)
+      xx = as.list(x[mapped_genes])
+      MapNam <-  data.frame(symbols = names(unlist(xx)), 
+                            entrez = unlist(xx), stringsAsFactors = F)
+      xx <- merge(nonzero.genes, MapNam, by.x = 1, by.y = 2)
+      
+      L <- data.frame(entrez = nonzero.genes,  
+                      coeffs = nonzero.coeffs, stringsAsFactors = F)
+      L <- merge(xx, L, by.x = 1, by.y = 1)
+    }
+    
+    
+    
+    if(!is.null(groups.file)){
+      write.table(L, groups.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
+    
+    if(verbose){
+      cat('\n significant hypothesis\n')
+      #print(L)
+    }
+    
+  }else{
+    if(verbose)
+      cat(paste('\n Running Model', model, 'and method', method, '\n'))
+    
+    cat('\n running nested cre cv')
+    Obj <- nested.cvGlmnet(x.train, y.train, num.iter = num.iter, nfold = nfold, verbose = verbose)
+    pred.train <- Obj$pred
+    outer.indecies <- Obj$outer.indecies
+    
+    ## equal prior
+    L <- nested.reportResults(pred.train,y.train, outer.indecies, 0.5, 'equal prior', verbose = verbose)
+    ROC <- L$ROC
+    L <- data.frame(test = rownames(L$DF), L$DF, stringsAsFactors = F)
+    
+    #if(verbose){
+    #  print(nested.accuracy(pred.train, y.train, outer.indecies, cf = 0.5))
+    #}
+    
+    if(!is.null(output.file)){
+      write.table(L, output.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
+    
+    if(!is.null(roc.file)){
+      write.table(ROC, roc.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
+    
+    ##nonzero.genes  <- Obj$nonzero.genes
+    nonzero.coeffs <- Obj$nonzero.coeffs
+    nonzero.genes  <- names(Obj$nonzero.coeffs)
+    
+    if(!is.null(uids)){
+      
+      ents.mRNA = ents[ents$type == 'mRNA', ]
+      
+      L <- data.frame(genes = ents.mRNA[match(nonzero.genes, ents.mRNA$id),], 
+                      coeffs = nonzero.coeffs[match(nonzero.genes, names(nonzero.coeffs))], stringsAsFactors = F)
+      
+      LL <- aggregate(L$coeffs, by = list(L$genes.uid),mean)
+      L <- cbind(L[match(LL[,1], L$genes.uid), c(1,2,3,4)], LL[,2])
+      colnames(L)[5] <- 'coeffs'
+    }else{
+      require(org.Hs.eg.db)
+      require(dplyr)
+      x <- org.Hs.egALIAS2EG
+      mapped_genes <- mappedkeys(x)
+      xx = as.list(x[mapped_genes])
+      MapNam <-  data.frame(symbols = names(unlist(xx)), 
+                            entrez = unlist(xx), stringsAsFactors = F)
+      xx <- merge(unique(nonzero.genes), MapNam, by.x = 1, by.y = 2)
+      
+      L <- data.frame(entrez = nonzero.genes,  
+                      coeffs = nonzero.coeffs, stringsAsFactors = F)
+      L <- merge(xx, L, by.x = 1, by.y = 1)
+      L = L %>% group_by(x,symbols) %>% summarise(mean_coeff = mean(coeffs))
+      colnames(L) = c('entrez', 'name', 'coeff')
+      L = L[!duplicated(cbind(L$entrez, L$coeff)),]
+    }
+    
     
     if(!is.null(groups.file)){
       write.table(L, groups.file, sep = '\t', col.names = T, row.names = F, quote = F)
