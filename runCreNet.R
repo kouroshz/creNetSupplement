@@ -10,7 +10,7 @@ option_list = list(
   make_option(c("-m", "--method"), default = "cv",
               help="method to be applied: one of cv, test or novel. Default Value: cv"),
   make_option(c("-n", "--model"),default = 'creNet',
-              help="one of creNet or lasso. Default Value: creNet"),
+              help="one of creNet, lasso or ridge. Default Value: creNet"),
   make_option(c("-k", "--risk"),default = 'auc',
               help="one of auc or ll. Default Value: auc"),
   make_option(c("-u", "--uids"),default = NULL,
@@ -102,7 +102,7 @@ if(!is.null(uids)){
 if(verbose)
   cat('\n Prepare KB and Data \n')
 
-if(model == 'lasso'){
+if(model %in% c('lasso', 'ridge')){
   isLasso = FALSE
 }else{
   isLasso = FALSE
@@ -131,13 +131,18 @@ if(RNAseq){
     x.test <- log(x.test)
   }
 }
-if(model == 'lasso'){
+if(model %in% c('lasso', 'ridge')){
   
   if(run.ms){
     if(verbose)
       cat(paste('\n Running Model', model, 'and method', method, '\n'))
-    fit <- cvGlmnet(data.matrix(x.train), y.train, data.matrix(x.test), y.test, num.iter = num.iter, 
-                    nfold = (nfold+1), alpha = 1)
+    if(model == 'lasso'){
+      fit <- cvGlmnet(data.matrix(x.train), y.train, data.matrix(x.test), y.test, 
+                      num.iter = num.iter, nfold = (nfold+1), alpha = 1)
+    }else{
+      fit <- cvGlmnet(data.matrix(x.train), y.train, data.matrix(x.test), y.test, 
+                      num.iter = num.iter, nfold = (nfold+1), alpha = 0)
+    }
     pred.probs <- fit$test.probs
     
     if(method == 'test'){
@@ -203,12 +208,19 @@ if(model == 'lasso'){
       cat(paste('\n Running Model', model, 'and method', method, '\n'))
     
     cat('\n running nested cre cv')
-    Obj <- nested.cvGlmnet(x.train, y.train, num.iter = num.iter, nfold = nfold, verbose = verbose)
+    if(model == 'lasso'){
+      Obj <- nested.cvGlmnet(x.train, y.train, num.iter = num.iter, 
+                             nfold = nfold, verbose = verbose, alpha = 1)
+    }else{
+      Obj <- nested.cvGlmnet(x.train, y.train, num.iter = num.iter, 
+                             nfold = nfold, verbose = verbose, alpha = 0)
+    }
     pred.train <- Obj$pred
     outer.indecies <- Obj$outer.indecies
     
     ## equal prior
-    L <- nested.reportResults(pred.train,y.train, outer.indecies, 0.5, 'equal prior', verbose = verbose)
+    L <- nested.reportResults(pred.train,y.train, outer.indecies, 0.5, 
+                              'equal prior', verbose = verbose)
     ROC <- L$ROC
     L <- data.frame(test = rownames(L$DF), L$DF, stringsAsFactors = F)
     
