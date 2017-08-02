@@ -10,7 +10,7 @@ For Usage:
 ```
 For test run:
 ```{R}
-./runCreNet.R -n creNet -m test -w log.cre -i 3 -e ./KB/string.ents -r ./KB/string.rels -d ./test_data/UC1.txt -t ./test_data/UC2.txt -o ./results.txt -z ./significant_regulators.txt
+./runCreNet.R -n creNet -m test -w log.cre -i 3 -e ./KB/string.ents -r ./KB/string.rels -d ./test_data/GSE12251_UC1_data.txt -t ./test_data/GSE14580_UC2_data.txt -o ./results.txt -z ./significant_regulators.txt
 ```
 ###Arguments:###
 1) -n creNet: run the program in creNet mode.
