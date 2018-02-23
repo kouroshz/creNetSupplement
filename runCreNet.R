@@ -41,6 +41,8 @@ option_list = list(
               help="Cutoff for cre prior pvalues: Default Value: 0.01"),
   make_option(c("-p", "--pvaluecutoff"), default = 0.05,
               help="cutoff for DEGs pvalue: Default Value: 0.05"),
+  make_option(c("-F", "--log2foldchane"), default = 0.55,
+              help="Cutoff for cre prior pvalues: Default Value: 0.01"),
   make_option(c("-s", "--standardize"), default = 'all',
               help="standardization method: 1) self, 2) all, 3) train. Default Value: all"),
   make_option(c("-v", "--verbose"), default = TRUE,
@@ -50,7 +52,10 @@ option_list = list(
   make_option(c("-z", "--groupsfile"), default = NULL,
               help="path to the output nonzero groups files (optional)"),
   make_option(c("-x", "--rocfile"), default = NULL,
-              help="path to the output ROC curve files (optional)"))
+              help="path to the output ROC curve files (optional)"),
+  make_option(c("-P", "--probfile"), default = NULL,
+              help="path to the output class probabilites files (optional)"))
+
 
 ## Parsing the input argument
 opt <- parse_args(OptionParser(option_list=option_list))
@@ -72,11 +77,13 @@ LOOCV           <- as.logical(opt$LOOCV)
 num.iter        <- opt$iternum
 cre.sig         <- opt$crecutoff
 de.sig          <- opt$pvaluecutoff
+log.fc          <- opt$log2foldchane
 verbose         <- as.logical(opt$verbose)
 standardize     <- opt$standardize
 output.file     <- opt$outfile
 groups.file     <- opt$groupsfile
 roc.file        <- opt$rocfile
+prob.file       <- opt$probfile
 
 ## Required libraires
 require(creNet)
@@ -102,11 +109,13 @@ if(!is.null(uids)){
 if(verbose)
   cat('\n Prepare KB and Data \n')
 
-if(model %in% c('lasso', 'ridge')){
-  isLasso = FALSE
-}else{
-  isLasso = FALSE
-}
+isLasso = FALSE
+#if(model %in% c('lasso', 'ridge')){
+#  isLasso = TRUE
+#}else{
+#  isLasso = FALSE
+#}
+
 L <- processDataAndKB(ents.file, rels.file, data.train.file, 
                       data.test.file=data.test.file, verbose = FALSE, 
                       uids = uids,isLasso = isLasso)
@@ -164,6 +173,10 @@ if(model %in% c('lasso', 'ridge')){
       write.table(ROC, roc.file, sep = '\t', col.names = T, row.names = F, quote = F)
     }
     
+    if(!is.null(prob.file) & method != 'novel'){
+      outProb = data.frame(probs=pred.probs,trueClass=y.test)
+      write.table(outProb, prob.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
     
     nonzero.genes  <- fit$nonzero.genes
     nonzero.coeffs <- fit$nonzero.coeffs
@@ -236,6 +249,11 @@ if(model %in% c('lasso', 'ridge')){
       write.table(ROC, roc.file, sep = '\t', col.names = T, row.names = F, quote = F)
     }
     
+    if(!is.null(prob.file) & method != 'novel'){
+      outProb = data.frame(probs=pred.train,trueClass=y.train)
+      write.table(outProb, prob.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
+    
     ##nonzero.genes  <- Obj$nonzero.genes
     nonzero.coeffs <- Obj$nonzero.coeffs
     nonzero.genes  <- names(Obj$nonzero.coeffs)
@@ -296,7 +314,7 @@ if(model %in% c('lasso', 'ridge')){
   if(verbose & is.null(uids))
     cat('\n running CRE \n')
   CF <- creFilter(ents, rels, x.train, y.train, x.test, y.test, cre.sig = cre.sig, 
-                  de.sig = de.sig, RNAseq = RNAseq, 
+                  de.sig = de.sig, log.fc = log.fc, RNAseq = RNAseq, 
                   type.weight = type.weight, filter = filter, verbose = FALSE)
   
   x.train <- CF$x.train
@@ -326,6 +344,11 @@ if(model %in% c('lasso', 'ridge')){
     
     if(!is.null(roc.file)){
       write.table(ROC, roc.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
+    
+    if(!is.null(prob.file) & method != 'novel'){
+      outProb = data.frame(probs=pred.probs,trueClass=y.test)
+      write.table(outProb, prob.file, sep = '\t', col.names = T, row.names = F, quote = F)
     }
     
     
@@ -392,6 +415,12 @@ if(model %in% c('lasso', 'ridge')){
     if(!is.null(roc.file)){
       write.table(ROC, roc.file, sep = '\t', col.names = T, row.names = F, quote = F)
     }
+    
+    if(!is.null(prob.file) & method != 'novel'){
+      outProb = data.frame(probs=pred.train,trueClass=y.train)
+      write.table(outProb, prob.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
+    
     
     ##nonzero.genes  <- Obj$nonzero.genes
     nonzero.coeffs <- Obj$nonzero.coeffs
@@ -461,7 +490,7 @@ if(model %in% c('lasso', 'ridge')){
     if(verbose & is.null(uids))
       cat('\n running CRE \n')
     CF <- creFilter(ents, rels, x.train, y.train, x.test, y.test, cre.sig = cre.sig, 
-                    de.sig = de.sig, RNAseq = RNAseq, 
+                    de.sig = de.sig, log.fc = log.fc, RNAseq = RNAseq, 
                     type.weight = type.weight, filter = filter, verbose = FALSE)
     
     
@@ -489,7 +518,8 @@ if(model %in% c('lasso', 'ridge')){
     ## Predict responses for testing data with best (alpha,lambda) values
     ## Testing data are self-standardized (use standardize="train" to use the mean & variances of training data)
     pred.test <- predict(fit.cv,newX=slice.test,standardize="self")
-    pred.test = do.call(cbind, pred.test)
+    pred.test <- do.call(cbind, pred.test)
+    pred.probs <-pred.test
     
     if(method == 'test'){
       ## equal prior
@@ -523,6 +553,12 @@ if(model %in% c('lasso', 'ridge')){
       if(!is.null(roc.file)){
         write.table(ROC, roc.file, sep = '\t', quote = F, col.names = T, row.names = F)
       }
+      
+      if(!is.null(prob.file) & method != 'novel'){
+        outProb = data.frame(probs=pred.probs,trueClass=y.test)
+        write.table(outProb, prob.file, sep = '\t', col.names = T, row.names = F, quote = F)
+      }
+      
       
     }else{
       ## equal prior
@@ -631,6 +667,11 @@ if(model %in% c('lasso', 'ridge')){
     
     if(!is.null(roc.file))
       write.table(ROC, roc.file, sep = '\t', quote = F, col.names = T, row.names = F)
+    
+    if(!is.null(prob.file)){
+      outProb = data.frame(probs=pred.train,trueClass=y.train)
+      write.table(outProb, prob.file, sep = '\t', col.names = T, row.names = F, quote = F)
+    }
     
     nonzero.genes  <- Obj$nonzero.genes
     nonzero.coeffs <- Obj$nonzero.coeffs
